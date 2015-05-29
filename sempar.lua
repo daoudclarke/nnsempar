@@ -3,7 +3,7 @@ require 'torch'
 require 'nn'
 
 local TOKENIZE_REGEX = "[a-zA-Z]+"
-local STOPWORDS = {the = true, is = true, of = true}
+local STOPWORDS = {the = true, is = true, of = true, ['in'] = true}
 
 
 function get_features(example)
@@ -60,21 +60,24 @@ function get_dataset(file_path)
       dataset.num_features = feature_index - 1
    until false
 
-   function get_vector(t, k)
+   function get_example(t, k)
       local position = t.positions[k]
       local file = torch.DiskFile(file_path)
       file:seek(position)
       local line = file:readString('*l')
       local data = json.decode(line)
       local features = get_features(data)
-      return vectorize(features, t.feature_indices)
+      local vector = vectorize(features, t.feature_indices)
+      local label = 1
+      if data.score > 0.0 then label = 2 end
+      return {vector, label}
    end
 
    dataset.size = function()
       return dataset._size
    end
    
-   dataset = setmetatable(dataset, {__index = get_vector})
+   dataset = setmetatable(dataset, {__index = get_example})
    return dataset
 end
 
@@ -96,12 +99,19 @@ end
 -- local feature_indices, num_features = get_feature_indices(data_file_path)
 -- print("Number of features found: ", num_features)
 
-local data_file_path = '../fbsearch/working/prepared-head.json'
+local data_file_path = '../fbsearch/working/prepared.json'
 local dataset = get_dataset(data_file_path)
 print("Number of features found: ", dataset.num_features)
-print("First element: ", dataset[1])
-print("Last element: ", dataset[dataset:size()])
+-- print("First element: ", dataset[1])
+-- print("Last element: ", dataset[dataset:size()])
 
 local model = get_model(dataset.num_features)
 local criterion = nn.ClassNLLCriterion()
+
+
+local trainer = nn.StochasticGradient(model, criterion)
+trainer.learningRate = 0.01
+trainer:train(dataset)
+
+-- model:forward(dataset[1])
 
