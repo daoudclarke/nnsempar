@@ -5,22 +5,6 @@ require 'nn'
 local TOKENIZE_REGEX = "[a-zA-Z]+"
 local STOPWORDS = {the = true, is = true, of = true}
 
-function get_data(file_path)
-   function inner()
-      local data_file = torch.DiskFile(file_path)
-      data_file:quiet()
-
-      repeat
-	 local line = data_file:readString('*l')
-	 if line == "" then break end
-	 local data = json.decode(line)
-	 coroutine.yield(data)
-      until false
-   end
-   
-   return coroutine.wrap(inner)
-end
-
 
 function get_features(example)
    -- Return an array containing feature strings
@@ -38,59 +22,86 @@ function get_features(example)
 end
 
 
-function get_feature_indices(file_path)
-   data_iterator = get_data(file_path)
-   local feature_index = 1
-   local feature_indices = {}
-
-   for example in data_iterator do
-      local features = get_features(example)
-      for i, feature in pairs(features) do
-	 if feature_indices[feature] == nil then
-	    print(feature, feature_index)
-	    feature_indices[feature] = feature_index
-	    feature_index = feature_index + 1
-	 end	 
-      end
-   end
-   return feature_indices, feature_index - 1
-end
-
-
 function vectorize(features, feature_indices)
    -- Return a sparse vector containing indexes of features
    local sparse = {}
    for _, feature in pairs(features) do
-      local i = string_indices[feature]
-      sparse[i] = 1.0
+      local i = feature_indices[feature]
+      table.insert(sparse, {i, 1.0})
    end
    return torch.Tensor(sparse)
 end
 
--- function get_data_tensor(file_path, string_indices, max_index)
---    data_iterator = get_data(file_path)
+
+function get_dataset(file_path)
+   local dataset = {}
+   dataset.file_path = file_path
+   dataset.positions = {}
+   dataset.feature_indices = {}
+   dataset._size = 0
+
+   local data_file = torch.DiskFile(file_path)
+   data_file:quiet()
+   local feature_index = 1
+   repeat
+      table.insert(dataset.positions, data_file:position())
+      local line = data_file:readString('*l')
+      if line == "" then break end
+      dataset._size = dataset._size + 1
+      local data = json.decode(line)
+      local features = get_features(data)
+      for i, feature in pairs(features) do
+	 if dataset.feature_indices[feature] == nil then
+	    print(feature, feature_index)
+	    dataset.feature_indices[feature] = feature_index
+	    feature_index = feature_index + 1
+	 end	 
+      end
+      dataset.num_features = feature_index - 1
+   until false
+
+   function get_vector(t, k)
+      local position = t.positions[k]
+      local file = torch.DiskFile(file_path)
+      file:seek(position)
+      local line = file:readString('*l')
+      local data = json.decode(line)
+      local features = get_features(data)
+      return vectorize(features, t.feature_indices)
+   end
+
+   dataset.size = function()
+      return dataset._size
+   end
    
---    for data in data_iterator do
+   dataset = setmetatable(dataset, {__index = get_vector})
+   return dataset
+end
 
---    end
--- end
 
+function get_model(num_features)
+   -- Logistic regression network
+   -- A sparse input
+   -- A softmax layer
 
--- function get_network(vocab_size)
---    -- Logistic regression network
---    -- Two sparse inputs concatenated for the source and target sentences
---    -- A softmax layer
-
---    local model = nn.Sequential()
---    local input_layer = nn.Concat(1)
---    input_layer:add( nn.SparseLinear(vocab_size, 2) )
---    input_layer:add( nn.SparseLinear(vocab_size, 2) )
---    model:add(input_layer)
+   local model = nn.Sequential()
+   model:add( nn.SparseLinear(num_features, 2) )
+   model:add( nn.LogSoftMax() )
    
+   return model
+end
 
--- end
 
+-- local data_file_path = '../fbsearch/working/prepared-head.json'
+-- local feature_indices, num_features = get_feature_indices(data_file_path)
+-- print("Number of features found: ", num_features)
 
 local data_file_path = '../fbsearch/working/prepared-head.json'
-local feature_indices, num_features = get_feature_indices(data_file_path)
-print("Number of features found: ", num_features)
+local dataset = get_dataset(data_file_path)
+print("Number of features found: ", dataset.num_features)
+print("First element: ", dataset[1])
+print("Last element: ", dataset[dataset:size()])
+
+local model = get_model(dataset.num_features)
+local criterion = nn.ClassNLLCriterion()
+
