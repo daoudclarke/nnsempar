@@ -54,9 +54,11 @@ function get_dataset(file_path)
       local features = get_features(data)
       for i, feature in pairs(features) do
 	 if dataset.feature_indices[feature] == nil then
-	    print(feature, feature_index)
 	    dataset.feature_indices[feature] = feature_index
 	    feature_index = feature_index + 1
+	    if (feature_index % 1000 == 0) then
+	       print(feature, feature_index)
+	    end
 	 end	 
       end
       dataset.num_features = feature_index - 1
@@ -64,10 +66,10 @@ function get_dataset(file_path)
 
    function get_example(t, k)
       local position = t.positions[k]
-      local file = torch.DiskFile(file_path)
-      file:seek(position)
-      local line = file:readString('*l')
-      local data = json.decode(line)
+      -- local file = torch.DiskFile(file_path)
+      data_file:seek(position)
+      local line = data_file:readString('*l')
+      local data = JSON:decode(line)
       local features = get_features(data)
       local vector = vectorize(features, t.feature_indices)
       local label = 1
