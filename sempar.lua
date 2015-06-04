@@ -51,7 +51,6 @@ function get_dataset(file_path, num_train_examples)
       table.insert(dataset.positions, data_file:position())
       local line = data_file:readString('*l')
       if line == "" then break end
-      dataset._size = dataset._size + 1
       local data = JSON:decode(line)
       if data.source ~= last_seen_source then
 	 num_seen_examples = num_seen_examples + 1
@@ -61,6 +60,7 @@ function get_dataset(file_path, num_train_examples)
 	 last_seen_source = data.source
       end
 
+      dataset._size = dataset._size + 1
       local features = get_features(data)
       for i, feature in pairs(features) do
 	 if dataset.feature_indices[feature] == nil then
@@ -114,7 +114,7 @@ end
 -- print("Number of features found: ", num_features)
 
 local data_file_path = '../fbsearch/working/prepared.json'
-local num_train_examples = 130
+local num_train_examples = 10
 local dataset = get_dataset(data_file_path, num_train_examples)
 print("Number of features found: ", dataset.num_features)
 -- print("First element: ", dataset[1])
