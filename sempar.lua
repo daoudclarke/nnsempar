@@ -1,6 +1,8 @@
-require 'json'
+-- require 'json'
 require 'torch'
 require 'nn'
+
+JSON = assert(loadfile "JSON.lua")()
 
 local TOKENIZE_REGEX = "[a-zA-Z]+"
 local STOPWORDS = {the = true, is = true, of = true, ['in'] = true}
@@ -48,7 +50,7 @@ function get_dataset(file_path)
       local line = data_file:readString('*l')
       if line == "" then break end
       dataset._size = dataset._size + 1
-      local data = json.decode(line)
+      local data = JSON:decode(line)
       local features = get_features(data)
       for i, feature in pairs(features) do
 	 if dataset.feature_indices[feature] == nil then
