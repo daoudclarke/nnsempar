@@ -82,6 +82,7 @@ function get_dataset(file_path, num_train_examples)
    until false
 
    dataset.next_test_position = data_file:position()
+   -- dataset.next_test_position = 1
 
    function get_example(t, k)
       local position = t.positions[k]
@@ -130,9 +131,9 @@ function get_model(num_features)
 end
 
 
-function test(dataset, model)
+function test(dataset, model, num_to_test)
    chosen_scores = {}
-   repeat
+   for i=1, num_to_test do
       items = dataset:next_test_items()
       if items == nil then break end
       local best_score = nil
@@ -142,18 +143,19 @@ function test(dataset, model)
 	 local vector = vectorize(features, dataset.feature_indices)
 	 if vector:dim() ~= 0 then
 	    local score = model:forward(vector)[1]
-	    if best_score == nil or score > best_score then
+	    -- print(data.score, data.value[1], score)
+	    if best_score == nil or score < best_score then
 	       best_score = score
 	       best_item = data
 	    end
 	 end
       end
-      print("Best item: ", best_item, best_score)
+      print("Best item: ", best_item.value[1], best_score)
       table.insert(chosen_scores, best_item.score)
-   until false
-   print(chosen_scores)
+   end
    local num_results = #chosen_scores
    chosen_scores = torch.Tensor(chosen_scores)
+   print(chosen_scores:view(1, -1))
    stderr = torch.std(chosen_scores) / math.sqrt(num_results) 
    print("Num results:", num_results, "Mean:", torch.mean(chosen_scores), "+/-", stderr)
 end
@@ -171,14 +173,18 @@ print("Number of features found: ", dataset.num_features)
 -- print("Last element: ", dataset[dataset:size()])
 
 local model = get_model(dataset.num_features)
-local criterion = nn.ClassNLLCriterion()
+local criterion = nn.ClassNLLCriterion(torch.Tensor({0.001, 0.999}))
 
 
 local trainer = nn.StochasticGradient(model, criterion)
 trainer.learningRate = 0.01
-trainer.maxIteration = 2
+trainer.maxIteration = 30
 trainer:train(dataset)
-test(dataset, model)
+for i, v in pairs(model) do
+   print(i, v)
+end
+
+test(dataset, model, 100)
 
 -- model:forward(dataset[1])
 
