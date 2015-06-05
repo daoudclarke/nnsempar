@@ -29,11 +29,18 @@ function vectorize(features, feature_indices)
    local sparse = {}
    for _, feature in pairs(features) do
       local i = feature_indices[feature]
-      table.insert(sparse, {i, 1.0})
+      if i ~= nil then table.insert(sparse, {i, 1.0}) end
    end
    return torch.Tensor(sparse)
 end
 
+
+function get_data_line(data_file, position)
+   data_file:seek(position)
+   local line = data_file:readString('*l')
+   if line == "" then return end
+   return JSON:decode(line)
+end
 
 function get_dataset(file_path, num_train_examples)
    local dataset = {}
@@ -74,12 +81,12 @@ function get_dataset(file_path, num_train_examples)
       dataset.num_features = feature_index - 1
    until false
 
+   dataset.next_test_position = data_file:position()
+
    function get_example(t, k)
       local position = t.positions[k]
       -- local file = torch.DiskFile(file_path)
-      data_file:seek(position)
-      local line = data_file:readString('*l')
-      local data = JSON:decode(line)
+      local data = get_data_line(data_file, position)
       local features = get_features(data)
       local vector = vectorize(features, t.feature_indices)
       local label = 1
@@ -87,8 +94,22 @@ function get_dataset(file_path, num_train_examples)
       return {vector, label}
    end
 
-   dataset.size = function()
-      return dataset._size
+   function dataset:size()
+      return self._size
+   end
+
+   function dataset:next_test_items()
+      local data = get_data_line(data_file, self.next_test_position)
+      if data == nil then return end
+      local current_source = data.source
+      local items = {}
+      while current_source == data.source do
+	 table.insert(items, data)
+	 data = get_data_line(data_file, data_file:position())
+	 if data == nil then return end
+      end
+      self.next_test_position = data_file:position()
+      return items
    end
    
    dataset = setmetatable(dataset, {__index = get_example})
@@ -109,12 +130,41 @@ function get_model(num_features)
 end
 
 
+function test(dataset, model)
+   chosen_scores = {}
+   repeat
+      items = dataset:next_test_items()
+      if items == nil then break end
+      local best_score = nil
+      local best_item = {score = 0.0}
+      for i, data in pairs(items) do
+	 local features = get_features(data)
+	 local vector = vectorize(features, dataset.feature_indices)
+	 if vector:dim() ~= 0 then
+	    local score = model:forward(vector)[1]
+	    if best_score == nil or score > best_score then
+	       best_score = score
+	       best_item = data
+	    end
+	 end
+      end
+      print("Best item: ", best_item, best_score)
+      table.insert(chosen_scores, best_item.score)
+   until false
+   print(chosen_scores)
+   local num_results = #chosen_scores
+   chosen_scores = torch.Tensor(chosen_scores)
+   stderr = torch.std(chosen_scores) / math.sqrt(num_results) 
+   print("Num results:", num_results, "Mean:", torch.mean(chosen_scores), "+/-", stderr)
+end
+
+
 -- local data_file_path = '../fbsearch/working/prepared-head.json'
 -- local feature_indices, num_features = get_feature_indices(data_file_path)
 -- print("Number of features found: ", num_features)
 
 local data_file_path = '../fbsearch/working/prepared.json'
-local num_train_examples = 10
+local num_train_examples = 70
 local dataset = get_dataset(data_file_path, num_train_examples)
 print("Number of features found: ", dataset.num_features)
 -- print("First element: ", dataset[1])
@@ -126,7 +176,9 @@ local criterion = nn.ClassNLLCriterion()
 
 local trainer = nn.StochasticGradient(model, criterion)
 trainer.learningRate = 0.01
+trainer.maxIteration = 2
 trainer:train(dataset)
+test(dataset, model)
 
 -- model:forward(dataset[1])
 
