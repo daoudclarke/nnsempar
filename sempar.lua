@@ -24,14 +24,16 @@ function get_features(example)
 end
 
 
-function vectorize(features, feature_indices)
+function vectorize(features, feature_indices, dims)
    -- Return a sparse vector containing indexes of features
-   local sparse = {}
+   local result = torch.zeros(dims)
    for _, feature in pairs(features) do
       local i = feature_indices[feature]
-      if i ~= nil then table.insert(sparse, {i, 1.0}) end
+      if i ~= nil then result[i] = 1.0 end
    end
-   return torch.Tensor(sparse)
+   -- Center
+   result = result - result:mean()   
+   return result
 end
 
 
@@ -55,10 +57,18 @@ function get_dataset(file_path, num_train_examples)
    local num_seen_examples = 0
    local last_seen_source = ''
    repeat
-      table.insert(dataset.positions, data_file:position())
+      local position = data_file:position()
       local line = data_file:readString('*l')
       if line == "" then break end
       local data = JSON:decode(line)
+      if data.score > 0.0 then
+	 for i=1,100 do
+	    table.insert(dataset.positions, position)
+	 end
+      else
+	 table.insert(dataset.positions, position)
+      end
+
       if data.source ~= last_seen_source then
 	 num_seen_examples = num_seen_examples + 1
 	 if num_seen_examples > num_train_examples then
@@ -67,7 +77,6 @@ function get_dataset(file_path, num_train_examples)
 	 last_seen_source = data.source
       end
 
-      dataset._size = dataset._size + 1
       local features = get_features(data)
       for i, feature in pairs(features) do
 	 if dataset.feature_indices[feature] == nil then
@@ -89,14 +98,14 @@ function get_dataset(file_path, num_train_examples)
       -- local file = torch.DiskFile(file_path)
       local data = get_data_line(data_file, position)
       local features = get_features(data)
-      local vector = vectorize(features, t.feature_indices)
+      local vector = vectorize(features, t.feature_indices, t.num_features)
       local label = 1
       if data.score > 0.0 then label = 2 end
       return {vector, label}
    end
 
    function dataset:size()
-      return self._size
+      return #self.positions
    end
 
    function dataset:next_test_items()
@@ -124,7 +133,7 @@ function get_model(num_features)
    -- A softmax layer
 
    local model = nn.Sequential()
-   model:add( nn.SparseLinear(num_features, 2) )
+   model:add( nn.Linear(num_features, 2) )
    model:add( nn.LogSoftMax() )
    
    return model
@@ -140,7 +149,7 @@ function test(dataset, model, num_to_test)
       local best_item = {score = 0.0}
       for i, data in pairs(items) do
 	 local features = get_features(data)
-	 local vector = vectorize(features, dataset.feature_indices)
+	 local vector = vectorize(features, dataset.feature_indices, dataset.num_features)
 	 if vector:dim() ~= 0 then
 	    local score = model:forward(vector)[1]
 	    -- print(data.score, data.value[1], score)
@@ -173,16 +182,17 @@ print("Number of features found: ", dataset.num_features)
 -- print("Last element: ", dataset[dataset:size()])
 
 local model = get_model(dataset.num_features)
-local criterion = nn.ClassNLLCriterion(torch.Tensor({0.001, 0.999}))
+-- local criterion = nn.ClassNLLCriterion(torch.Tensor({0.001, 0.999}))
+local criterion = nn.ClassNLLCriterion()
 
 
 local trainer = nn.StochasticGradient(model, criterion)
 trainer.learningRate = 0.01
-trainer.maxIteration = 30
+trainer.maxIteration = 3
 trainer:train(dataset)
-for i, v in pairs(model) do
-   print(i, v)
-end
+-- for i, v in pairs(model) do
+--    print(i, v)
+-- end
 
 test(dataset, model, 100)
 
