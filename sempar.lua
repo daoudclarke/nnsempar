@@ -26,14 +26,12 @@ end
 
 function vectorize(features, feature_indices, dims)
    -- Return a sparse vector containing indexes of features
-   local result = torch.zeros(dims)
+   local sparse = {}
    for _, feature in pairs(features) do
       local i = feature_indices[feature]
-      if i ~= nil then result[i] = 1.0 end
-   end
-   -- Center
-   result = result - result:mean()   
-   return result
+      if i ~= nil then table.insert(sparse, {i, 1.0}) end
+    end
+   return torch.Tensor(sparse)
 end
 
 
@@ -47,7 +45,8 @@ end
 function get_dataset(file_path, num_train_examples)
    local dataset = {}
    dataset.file_path = file_path
-   dataset.positions = {}
+   dataset.vectors = {}
+   dataset.labels = {}
    dataset.feature_indices = {}
    dataset._size = 0
 
@@ -57,26 +56,9 @@ function get_dataset(file_path, num_train_examples)
    local num_seen_examples = 0
    local last_seen_source = ''
    repeat
-      local position = data_file:position()
       local line = data_file:readString('*l')
       if line == "" then break end
       local data = JSON:decode(line)
-      if data.score > 0.0 then
-	 for i=1,100 do
-	    table.insert(dataset.positions, position)
-	 end
-      else
-	 table.insert(dataset.positions, position)
-      end
-
-      if data.source ~= last_seen_source then
-	 num_seen_examples = num_seen_examples + 1
-	 if num_seen_examples > num_train_examples then
-	    break
-	 end
-	 last_seen_source = data.source
-      end
-
       local features = get_features(data)
       for i, feature in pairs(features) do
 	 if dataset.feature_indices[feature] == nil then
@@ -87,25 +69,41 @@ function get_dataset(file_path, num_train_examples)
 	    end
 	 end	 
       end
+      local vector = vectorize(features,
+			       dataset.feature_indices,
+			       dataset.num_features)      
+
+      if data.score > 0.0 then
+	 for i=1,100 do
+	    table.insert(dataset.vectors, vector)
+	    table.insert(dataset.labels, 2)
+	 end
+      else
+	 table.insert(dataset.vectors, vector)
+	 table.insert(dataset.labels, 1)
+      end
+
       dataset.num_features = feature_index - 1
+
+      if data.source ~= last_seen_source then
+	 num_seen_examples = num_seen_examples + 1
+	 if num_seen_examples > num_train_examples then
+	    break
+	 end
+	 last_seen_source = data.source
+      end
    until false
 
    dataset.next_test_position = data_file:position()
-   -- dataset.next_test_position = 1
 
    function get_example(t, k)
-      local position = t.positions[k]
-      -- local file = torch.DiskFile(file_path)
-      local data = get_data_line(data_file, position)
-      local features = get_features(data)
-      local vector = vectorize(features, t.feature_indices, t.num_features)
-      local label = 1
-      if data.score > 0.0 then label = 2 end
+      local vector = t.vectors[k]
+      local label = t.labels[k]
       return {vector, label}
    end
 
    function dataset:size()
-      return #self.positions
+      return #self.vectors
    end
 
    function dataset:next_test_items()
@@ -133,7 +131,7 @@ function get_model(num_features)
    -- A softmax layer
 
    local model = nn.Sequential()
-   model:add( nn.Linear(num_features, 100) )
+   model:add( nn.SparseLinear(num_features, 100) )
    model:add( nn.ReLU() )
    model:add( nn.Dropout() )
    model:add( nn.Linear(100, 2) ) 
@@ -162,7 +160,11 @@ function test(dataset, model, num_to_test)
 	    end
 	 end
       end
-      print("Best item: ", best_item.value[1], best_score)
+      if best_score == nil then
+	 print("Best item not found")
+      else
+	 print("Best item: ", best_item.value[1], best_score)
+      end
       table.insert(chosen_scores, best_item.score)
    end
    local num_results = #chosen_scores
@@ -180,12 +182,13 @@ end
 local data_file_path = '../fbsearch/working/prepared.json'
 local num_train_examples = 70
 local dataset = get_dataset(data_file_path, num_train_examples)
-print("Number of features found: ", dataset.num_features)
--- print("First element: ", dataset[1])
--- print("Last element: ", dataset[dataset:size()])
+print("Number of features: ", dataset.num_features)
+print("Number of instances: ", dataset:size())
+print("First element: ", dataset[1])
+print("Second element: ", dataset[2])
+print("Last element: ", dataset[dataset:size()])
 
 local model = get_model(dataset.num_features)
--- local criterion = nn.ClassNLLCriterion(torch.Tensor({0.001, 0.999}))
 local criterion = nn.ClassNLLCriterion()
 
 
