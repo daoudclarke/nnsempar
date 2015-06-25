@@ -133,7 +133,10 @@ function get_model(num_features)
    -- A softmax layer
 
    local model = nn.Sequential()
-   model:add( nn.Linear(num_features, 2) )
+   model:add( nn.Linear(num_features, 100) )
+   model:add( nn.ReLU() )
+   model:add( nn.Dropout() )
+   model:add( nn.Linear(100, 2) ) 
    model:add( nn.LogSoftMax() )
    
    return model
