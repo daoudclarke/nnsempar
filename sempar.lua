@@ -174,7 +174,7 @@ end
 -- local feature_indices, num_features = get_feature_indices(data_file_path)
 -- print("Number of features found: ", num_features)
 
-local data_file_path = '../fbsearch/working/prepared.json'
+local data_file_path = '../data/prepared.json'
 local num_train_examples = 70
 local dataset = get_dataset(data_file_path, num_train_examples)
 print("Number of features found: ", dataset.num_features)
