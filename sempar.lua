@@ -57,7 +57,8 @@ function get_dataset(file_path, num_train_examples)
    local last_seen_source = ''
    repeat
       local line = data_file:readString('*l')
-      if line == "" then break end
+      if line == "" and data_file:hasError() then break end
+      if line ~= "" then
       local data = JSON:decode(line)
       local features = get_features(data)
       for i, feature in pairs(features) do
@@ -87,10 +88,14 @@ function get_dataset(file_path, num_train_examples)
 
       if data.source ~= last_seen_source then
 	 num_seen_examples = num_seen_examples + 1
+	 if num_seen_examples % 10 == 0 then
+            print("-- Seen examples:", num_seen_examples)
+         end
 	 if num_seen_examples > num_train_examples then
 	    break
 	 end
 	 last_seen_source = data.source
+      end
       end
    until false
 
@@ -131,7 +136,10 @@ function get_model(num_features)
    -- A softmax layer
 
    local model = nn.Sequential()
-   model:add( nn.SparseLinear(num_features, 100) )
+   model:add( nn.SparseLinear(num_features, 1000) )
+   model:add( nn.ReLU() )
+   model:add( nn.Dropout() )
+   model:add( nn.Linear(1000, 100) )
    model:add( nn.ReLU() )
    model:add( nn.Dropout() )
    model:add( nn.Linear(100, 2) ) 
@@ -179,8 +187,9 @@ end
 -- local feature_indices, num_features = get_feature_indices(data_file_path)
 -- print("Number of features found: ", num_features)
 
-local data_file_path = '../data/prepared.json'
-local num_train_examples = 70
+-- local data_file_path = '../data/prepared.json'
+local data_file_path = '../../sempre-paraphrase-dataset/examples-fixed-inf.json'
+local num_train_examples = 3000
 local dataset = get_dataset(data_file_path, num_train_examples)
 print("Number of features: ", dataset.num_features)
 print("Number of instances: ", dataset:size())
@@ -194,7 +203,7 @@ local criterion = nn.ClassNLLCriterion()
 
 local trainer = nn.StochasticGradient(model, criterion)
 trainer.learningRate = 0.01
-trainer.maxIteration = 3
+trainer.maxIteration = 10
 trainer:train(dataset)
 -- for i, v in pairs(model) do
 --    print(i, v)
