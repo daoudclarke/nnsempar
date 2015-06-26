@@ -131,10 +131,10 @@ function get_model(num_features)
    -- A softmax layer
 
    local model = nn.Sequential()
-   model:add( nn.SparseLinear(num_features, 100) )
+   model:add( nn.SparseLinear(num_features, 1000) )
    model:add( nn.ReLU() )
    model:add( nn.Dropout() )
-   model:add( nn.Linear(100, 2) ) 
+   model:add( nn.Linear(1000, 2) ) 
    model:add( nn.LogSoftMax() )
    
    return model
@@ -194,7 +194,7 @@ local criterion = nn.ClassNLLCriterion()
 
 local trainer = nn.StochasticGradient(model, criterion)
 trainer.learningRate = 0.01
-trainer.maxIteration = 3
+trainer.maxIteration = 10
 trainer:train(dataset)
 -- for i, v in pairs(model) do
 --    print(i, v)
